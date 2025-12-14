@@ -1,0 +1,30 @@
+# Environment variables
+.env
+
+# IDEs / Editors
+.idea/
+.vscode/
+
+# Go build artifacts
+/bin/
+/dist/
+*.exe
+*.out
+
+# Go test cache
+*.test
+
+# Go module cache (optional, usually global)
+# /pkg/
+
+# SQLite database
+*.db
+*.db-journal
+
+# Docker
+data/
+docker-data/
+
+# OS-specific
+.DS_Store
+Thumbs.db

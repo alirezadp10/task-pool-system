@@ -1,0 +1,30 @@
+# Git
+.git
+.gitignore
+
+# IDEs / Editors
+.idea
+.vscode
+
+# Environment files
+.env
+
+# Go build artifacts
+bin/
+dist/
+tmp/
+*.exe
+*.out
+*.test
+
+# Logs
+*.log
+
+# SQLite / runtime data
+data/
+*.db
+*.db-journal
+
+# Docker files (not needed inside image)
+Dockerfile
+docker-compose.yml
