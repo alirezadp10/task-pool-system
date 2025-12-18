@@ -41,6 +41,8 @@ func NewPoolService(
 		requeueStop:   make(chan struct{}),
 	}
 
+	p.initializeRedisQueue(queueSize)
+
 	p.requeueWG.Add(1)
 	go p.requeuePendingLoop()
 
@@ -50,6 +52,32 @@ func NewPoolService(
 	}
 
 	return p
+}
+
+func (p *PoolService) initializeRedisQueue(queueSize int) {
+	if p.redis == nil || p.redisQueueKey == "" {
+		return
+	}
+
+	ctx := context.Background()
+
+	if err := p.redis.Do(
+		ctx,
+		p.redis.B().Del().Key(p.redisQueueKey).Build(),
+	).Error(); err != nil {
+		log.Fatalf("failed to reset redis queue tokens: %v", err)
+	}
+
+	if queueSize > 0 {
+		for i := 0; i < queueSize; i++ {
+			if err := p.redis.Do(
+				ctx,
+				p.redis.B().Rpush().Key(p.redisQueueKey).Element("1").Build(),
+			).Error(); err != nil {
+				log.Fatalf("failed to initialize redis queue tokens: %v", err)
+			}
+		}
+	}
 }
 
 func (p *PoolService) Enqueue(taskID string) bool {

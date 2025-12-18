@@ -34,33 +34,11 @@ var serverCmd = &cobra.Command{
 		redisClient := config.NewRedisClient(cfg.RedisAddr)
 		defer redisClient.Close()
 
-		{
-			ctx := context.Background()
-
-			if err := redisClient.Do(
-				ctx,
-				redisClient.B().Del().Key(cfg.RedisQueueKey).Build(),
-			).Error(); err != nil {
-				log.Fatalf("failed to reset redis queue tokens: %v", err)
-			}
-
-			if cfg.QueueSize > 0 {
-				for i := 0; i < cfg.QueueSize; i++ {
-					if err := redisClient.Do(
-						ctx,
-						redisClient.B().Rpush().Key(cfg.RedisQueueKey).Element("1").Build(),
-					).Error(); err != nil {
-						log.Fatalf("failed to initialize redis queue tokens: %v", err)
-					}
-				}
-			}
-		}
-
 		sqlite := sqlite.New(cfg.DatabaseDSN)
 
 		taskRepo := repository.NewTaskRepository(sqlite)
 
-		pool := services.NewPoolService(
+		poolService := services.NewPoolService(
 			taskRepo,
 			cfg.Workers,
 			cfg.QueueSize,
@@ -68,7 +46,7 @@ var serverCmd = &cobra.Command{
 			cfg.RedisQueueKey,
 		)
 
-		taskService := services.NewTaskService(taskRepo, pool, redisClient, cfg.RedisQueueKey)
+		taskService := services.NewTaskService(taskRepo, poolService, redisClient, cfg.RedisQueueKey)
 
 		e := echo.New()
 
@@ -93,7 +71,7 @@ var serverCmd = &cobra.Command{
 		defer cancel()
 
 		_ = e.Shutdown(ctx)
-		pool.Shutdown(ctx)
+		poolService.Shutdown(ctx)
 
 		log.Println("HTTP server and worker pool shut down gracefully")
 		return nil
