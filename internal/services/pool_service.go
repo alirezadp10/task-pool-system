@@ -27,10 +27,10 @@ type PoolService struct {
 }
 
 func NewPoolService(
+	redis rueidis.Client,
 	repo *repository.TaskRepository,
 	workers int,
 	queueSize int,
-	redis rueidis.Client,
 	redisQueueKey string,
 ) *PoolService {
 	p := &PoolService{

@@ -34,9 +34,9 @@ func setupTestDB(t *testing.T) *gorm.DB {
 func TestTaskService_AddAndCheckStatus(t *testing.T) {
 	db := setupTestDB(t)
 	repo := repository.NewTaskRepository(db)
-	pool := NewPoolService(repo, 0, 10, nil, "")
+	pool := NewPoolService(nil, repo, 0, 10, "")
 	defer pool.Shutdown(context.Background())
-	service := NewTaskService(repo, pool, nil, "")
+	service := NewTaskService(nil, repo, pool, "")
 
 	ctx := context.Background()
 	title := "Test Task"
@@ -64,9 +64,9 @@ func TestTaskService_AddAndCheckStatus(t *testing.T) {
 func TestTaskService_ConcurrentSubmissions(t *testing.T) {
 	db := setupTestDB(t)
 	repo := repository.NewTaskRepository(db)
-	pool := NewPoolService(repo, 0, 100, nil, "")
+	pool := NewPoolService(nil, repo, 0, 100, "")
 	defer pool.Shutdown(context.Background())
-	service := NewTaskService(repo, pool, nil, "")
+	service := NewTaskService(nil, repo, pool, "")
 
 	const concurrentCount = 50
 	var wg sync.WaitGroup
@@ -101,7 +101,7 @@ func TestPoolService_EnqueueAndProcess(t *testing.T) {
 	db := setupTestDB(t)
 	repo := repository.NewTaskRepository(db)
 
-	pool := NewPoolService(repo, 2, 10, nil, "")
+	pool := NewPoolService(nil, repo, 2, 10, "")
 	defer pool.Shutdown(context.Background())
 
 	ctx := context.Background()
@@ -135,7 +135,7 @@ func TestPoolService_ConcurrentEnqueue(t *testing.T) {
 	repo := repository.NewTaskRepository(db)
 
 	const queueSize = 10
-	pool := NewPoolService(repo, 0, queueSize, nil, "")
+	pool := NewPoolService(nil, repo, 0, queueSize, "")
 	defer pool.Shutdown(context.Background())
 
 	ctx := context.Background()
@@ -173,7 +173,7 @@ func TestPoolService_WorkerMultiThreading(t *testing.T) {
 	repo := repository.NewTaskRepository(db)
 
 	const workerCount = 5
-	pool := NewPoolService(repo, workerCount, 50, nil, "")
+	pool := NewPoolService(nil, repo, workerCount, 50, "")
 	defer pool.Shutdown(context.Background())
 
 	ctx := context.Background()

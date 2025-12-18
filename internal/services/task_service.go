@@ -21,9 +21,9 @@ type TaskService struct {
 var ErrTaskQueueFull = errors.New("task queue is full")
 
 func NewTaskService(
+	redis rueidis.Client,
 	repo *repository.TaskRepository,
 	pool *PoolService,
-	redis rueidis.Client,
 	redisQueueKey string,
 ) *TaskService {
 	return &TaskService{

@@ -39,14 +39,14 @@ var serverCmd = &cobra.Command{
 		taskRepo := repository.NewTaskRepository(sqlite)
 
 		poolService := services.NewPoolService(
+			redisClient,
 			taskRepo,
 			cfg.Workers,
 			cfg.QueueSize,
-			redisClient,
 			cfg.RedisQueueKey,
 		)
 
-		taskService := services.NewTaskService(taskRepo, poolService, redisClient, cfg.RedisQueueKey)
+		taskService := services.NewTaskService(redisClient, taskRepo, poolService, cfg.RedisQueueKey)
 
 		e := echo.New()
 
