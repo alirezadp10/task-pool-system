@@ -13,7 +13,6 @@ import (
 	"github.com/spf13/cobra"
 
 	config "task-pool-system.com/task-pool-system/internal/configs"
-	sqlite "task-pool-system.com/task-pool-system/internal/configs"
 	httpapi "task-pool-system.com/task-pool-system/internal/http"
 	repository "task-pool-system.com/task-pool-system/internal/repositories"
 	"task-pool-system.com/task-pool-system/internal/services"
@@ -34,7 +33,7 @@ var serverCmd = &cobra.Command{
 		redisClient := config.NewRedisClient(cfg.RedisAddr)
 		defer redisClient.Close()
 
-		sqlite := sqlite.New(cfg.DatabaseDSN)
+		sqlite := config.NewSqliteClient(cfg.DatabaseDSN)
 
 		taskRepo := repository.NewTaskRepository(sqlite)
 
