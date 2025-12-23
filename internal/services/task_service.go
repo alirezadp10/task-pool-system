@@ -3,34 +3,30 @@ package services
 import (
 	"context"
 	"errors"
+
 	"task-pool-system.com/task-pool-system/internal/constants"
-
-	"github.com/redis/rueidis"
-
 	model "task-pool-system.com/task-pool-system/internal/models"
+	"task-pool-system.com/task-pool-system/internal/queue"
 	repository "task-pool-system.com/task-pool-system/internal/repositories"
 )
 
 type TaskService struct {
-	repo          *repository.TaskRepository
-	pool          *PoolService
-	redis         rueidis.Client
-	redisQueueKey string
+	repo         *repository.TaskRepository
+	pool         *PoolService
+	tokenManager queue.TokenManager
 }
 
 var ErrTaskQueueFull = errors.New("task queue is full")
 
 func NewTaskService(
-	redis rueidis.Client,
+	tokenManager queue.TokenManager,
 	repo *repository.TaskRepository,
 	pool *PoolService,
-	redisQueueKey string,
 ) *TaskService {
 	return &TaskService{
-		repo:          repo,
-		pool:          pool,
-		redis:         redis,
-		redisQueueKey: redisQueueKey,
+		repo:         repo,
+		pool:         pool,
+		tokenManager: tokenManager,
 	}
 }
 
@@ -53,18 +49,10 @@ func (s *TaskService) CreateTask(ctx context.Context, title, description string)
 }
 
 func (s *TaskService) acquireQueueToken(ctx context.Context) (bool, error) {
-	if s.redis == nil || s.redisQueueKey == "" {
-		return false, nil
-	}
-
-	if err := s.redis.Do(
-		ctx,
-		s.redis.B().Lpop().Key(s.redisQueueKey).Build(),
-	).Error(); err != nil {
-		if rueidis.IsRedisNil(err) {
+	if err := s.tokenManager.AcquireToken(ctx); err != nil {
+		if errors.Is(err, queue.ErrNoTokenAvailable) {
 			return false, ErrTaskQueueFull
 		}
-
 		return false, err
 	}
 
@@ -109,14 +97,7 @@ func (s *TaskService) enqueueTaskForProcessing(
 }
 
 func (s *TaskService) releaseQueueToken(ctx context.Context) {
-	if s.redis == nil || s.redisQueueKey == "" {
-		return
-	}
-
-	_ = s.redis.Do(
-		ctx,
-		s.redis.B().Rpush().Key(s.redisQueueKey).Element("1").Build(),
-	).Error()
+	_ = s.tokenManager.ReleaseToken(ctx)
 }
 
 func (s *TaskService) GetTask(ctx context.Context, id string) (*model.Task, error) {

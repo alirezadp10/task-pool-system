@@ -8,40 +8,39 @@ import (
 	"sync"
 	"time"
 
-	"github.com/redis/rueidis"
-
 	"task-pool-system.com/task-pool-system/internal/constants"
 	model "task-pool-system.com/task-pool-system/internal/models"
+	"task-pool-system.com/task-pool-system/internal/queue"
 	repository "task-pool-system.com/task-pool-system/internal/repositories"
 )
 
 type PoolService struct {
-	queue         chan string
-	wg            sync.WaitGroup
-	requeueWG     sync.WaitGroup
-	enqueued      sync.Map
-	repo          *repository.TaskRepository
-	redis         rueidis.Client
-	redisQueueKey string
-	requeueStop   chan struct{}
+	queue        chan string
+	wg           sync.WaitGroup
+	requeueWG    sync.WaitGroup
+	enqueued     sync.Map
+	repo         *repository.TaskRepository
+	tokenManager queue.TokenManager
+	requeueStop  chan struct{}
 }
 
 func NewPoolService(
-	redis rueidis.Client,
+	tokenManager queue.TokenManager,
 	repo *repository.TaskRepository,
 	workers int,
 	queueSize int,
-	redisQueueKey string,
 ) *PoolService {
 	p := &PoolService{
-		queue:         make(chan string, queueSize),
-		repo:          repo,
-		redis:         redis,
-		redisQueueKey: redisQueueKey,
-		requeueStop:   make(chan struct{}),
+		queue:        make(chan string, queueSize),
+		repo:         repo,
+		tokenManager: tokenManager,
+		requeueStop:  make(chan struct{}),
 	}
 
-	p.initializeRedisQueue(queueSize)
+	ctx := context.Background()
+	if err := p.tokenManager.InitializeTokens(ctx, queueSize); err != nil {
+		log.Fatalf("failed to initialize queue tokens: %v", err)
+	}
 
 	p.requeueWG.Add(1)
 	go p.requeuePendingLoop()
@@ -52,32 +51,6 @@ func NewPoolService(
 	}
 
 	return p
-}
-
-func (p *PoolService) initializeRedisQueue(queueSize int) {
-	if p.redis == nil || p.redisQueueKey == "" {
-		return
-	}
-
-	ctx := context.Background()
-
-	if err := p.redis.Do(
-		ctx,
-		p.redis.B().Del().Key(p.redisQueueKey).Build(),
-	).Error(); err != nil {
-		log.Fatalf("failed to reset redis queue tokens: %v", err)
-	}
-
-	if queueSize > 0 {
-		for i := 0; i < queueSize; i++ {
-			if err := p.redis.Do(
-				ctx,
-				p.redis.B().Rpush().Key(p.redisQueueKey).Element("1").Build(),
-			).Error(); err != nil {
-				log.Fatalf("failed to initialize redis queue tokens: %v", err)
-			}
-		}
-	}
 }
 
 func (p *PoolService) Enqueue(taskID string) bool {
@@ -163,15 +136,8 @@ func (p *PoolService) completeTask(ctx context.Context, workerID int, task *mode
 }
 
 func (p *PoolService) releaseQueueToken(ctx context.Context, workerID int) {
-	if p.redis == nil || p.redisQueueKey == "" {
-		return
-	}
-
-	if err := p.redis.Do(
-		ctx,
-		p.redis.B().Rpush().Key(p.redisQueueKey).Element("1").Build(),
-	).Error(); err != nil {
-		log.Printf("worker %d: failed to release redis queue token: %v", workerID, err)
+	if err := p.tokenManager.ReleaseToken(ctx); err != nil {
+		log.Printf("worker %d: failed to release queue token: %v", workerID, err)
 	}
 }
 

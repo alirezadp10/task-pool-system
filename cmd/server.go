@@ -14,6 +14,7 @@ import (
 
 	config "task-pool-system.com/task-pool-system/internal/configs"
 	httpapi "task-pool-system.com/task-pool-system/internal/http"
+	"task-pool-system.com/task-pool-system/internal/queue"
 	repository "task-pool-system.com/task-pool-system/internal/repositories"
 	"task-pool-system.com/task-pool-system/internal/services"
 )
@@ -33,19 +34,20 @@ var serverCmd = &cobra.Command{
 		redisClient := config.NewRedisClient(cfg.RedisAddr)
 		defer redisClient.Close()
 
+		tokenManager := queue.NewRedisTokenManager(redisClient, cfg.RedisQueueKey)
+
 		sqlite := config.NewSqliteClient(cfg.DatabaseDSN)
 
 		taskRepo := repository.NewTaskRepository(sqlite)
 
 		poolService := services.NewPoolService(
-			redisClient,
+			tokenManager,
 			taskRepo,
 			cfg.Workers,
 			cfg.QueueSize,
-			cfg.RedisQueueKey,
 		)
 
-		taskService := services.NewTaskService(redisClient, taskRepo, poolService, cfg.RedisQueueKey)
+		taskService := services.NewTaskService(tokenManager, taskRepo, poolService)
 
 		e := echo.New()
 

@@ -11,8 +11,46 @@ import (
 
 	"task-pool-system.com/task-pool-system/internal/constants"
 	model "task-pool-system.com/task-pool-system/internal/models"
+	"task-pool-system.com/task-pool-system/internal/queue"
 	repository "task-pool-system.com/task-pool-system/internal/repositories"
 )
+
+// mockTokenManager is a simple in-memory token manager for testing
+type mockTokenManager struct {
+	mu     sync.Mutex
+	tokens int
+}
+
+func newMockTokenManager(capacity int) *mockTokenManager {
+	return &mockTokenManager{tokens: capacity}
+}
+
+func (m *mockTokenManager) AcquireToken(ctx context.Context) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.tokens <= 0 {
+		return queue.ErrNoTokenAvailable
+	}
+	m.tokens--
+	return nil
+}
+
+func (m *mockTokenManager) ReleaseToken(ctx context.Context) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.tokens++
+	return nil
+}
+
+func (m *mockTokenManager) InitializeTokens(ctx context.Context, count int) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.tokens = count
+	return nil
+}
 
 func setupTestDB(t *testing.T) *gorm.DB {
 	db, err := gorm.Open(sqlite.Open(":memory:?cache=shared"), &gorm.Config{})
@@ -34,9 +72,10 @@ func setupTestDB(t *testing.T) *gorm.DB {
 func TestTaskService_AddAndCheckStatus(t *testing.T) {
 	db := setupTestDB(t)
 	repo := repository.NewTaskRepository(db)
-	pool := NewPoolService(nil, repo, 0, 10, "")
+	tokenManager := newMockTokenManager(10)
+	pool := NewPoolService(tokenManager, repo, 0, 10)
 	defer pool.Shutdown(context.Background())
-	service := NewTaskService(nil, repo, pool, "")
+	service := NewTaskService(tokenManager, repo, pool)
 
 	ctx := context.Background()
 	title := "Test Task"
@@ -64,9 +103,10 @@ func TestTaskService_AddAndCheckStatus(t *testing.T) {
 func TestTaskService_ConcurrentSubmissions(t *testing.T) {
 	db := setupTestDB(t)
 	repo := repository.NewTaskRepository(db)
-	pool := NewPoolService(nil, repo, 0, 100, "")
+	tokenManager := newMockTokenManager(100)
+	pool := NewPoolService(tokenManager, repo, 0, 100)
 	defer pool.Shutdown(context.Background())
-	service := NewTaskService(nil, repo, pool, "")
+	service := NewTaskService(tokenManager, repo, pool)
 
 	const concurrentCount = 50
 	var wg sync.WaitGroup
@@ -101,7 +141,8 @@ func TestPoolService_EnqueueAndProcess(t *testing.T) {
 	db := setupTestDB(t)
 	repo := repository.NewTaskRepository(db)
 
-	pool := NewPoolService(nil, repo, 2, 10, "")
+	tokenManager := newMockTokenManager(10)
+	pool := NewPoolService(tokenManager, repo, 2, 10)
 	defer pool.Shutdown(context.Background())
 
 	ctx := context.Background()
@@ -135,7 +176,8 @@ func TestPoolService_ConcurrentEnqueue(t *testing.T) {
 	repo := repository.NewTaskRepository(db)
 
 	const queueSize = 10
-	pool := NewPoolService(nil, repo, 0, queueSize, "")
+	tokenManager := newMockTokenManager(queueSize)
+	pool := NewPoolService(tokenManager, repo, 0, queueSize)
 	defer pool.Shutdown(context.Background())
 
 	ctx := context.Background()
@@ -173,7 +215,8 @@ func TestPoolService_WorkerMultiThreading(t *testing.T) {
 	repo := repository.NewTaskRepository(db)
 
 	const workerCount = 5
-	pool := NewPoolService(nil, repo, workerCount, 50, "")
+	tokenManager := newMockTokenManager(50)
+	pool := NewPoolService(tokenManager, repo, workerCount, 50)
 	defer pool.Shutdown(context.Background())
 
 	ctx := context.Background()
