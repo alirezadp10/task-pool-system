@@ -2,21 +2,19 @@ package repository
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
 	"task-pool-system.com/task-pool-system/internal/constants"
+	apperrors "task-pool-system.com/task-pool-system/internal/errors"
 	model "task-pool-system.com/task-pool-system/internal/models"
 )
 
 type TaskRepository struct {
 	db *gorm.DB
 }
-
-var ErrOptimisticLock = errors.New("optimistic locking conflict")
 
 func NewTaskRepository(db *gorm.DB) *TaskRepository {
 	return &TaskRepository{db: db}
@@ -43,6 +41,9 @@ func (r *TaskRepository) FindByID(ctx context.Context, id string) (*model.Task, 
 	var task model.Task
 	err := r.db.WithContext(ctx).First(&task, "id = ?", id).Error
 	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, apperrors.ErrTaskNotFound
+		}
 		return nil, err
 	}
 	return &task, nil
@@ -56,7 +57,7 @@ func (r *TaskRepository) List(ctx context.Context) ([]model.Task, error) {
 
 func (r *TaskRepository) ListPendingUnstarted(ctx context.Context, limit int) ([]model.Task, error) {
 	if limit <= 0 {
-		return nil, errors.New("limit must be positive")
+		return nil, apperrors.ErrInvalidLimit
 	}
 
 	var tasks []model.Task
@@ -89,7 +90,7 @@ func (r *TaskRepository) Update(ctx context.Context, task *model.Task) error {
 	}
 
 	if res.RowsAffected == 0 {
-		return ErrOptimisticLock
+		return apperrors.ErrOptimisticLock
 	}
 
 	task.Version++

@@ -9,41 +9,26 @@ import (
 	"time"
 
 	"task-pool-system.com/task-pool-system/internal/constants"
+	apperrors "task-pool-system.com/task-pool-system/internal/errors"
 	model "task-pool-system.com/task-pool-system/internal/models"
-	"task-pool-system.com/task-pool-system/internal/queue"
 	repository "task-pool-system.com/task-pool-system/internal/repositories"
 )
 
 type PoolService struct {
-	queue        chan string
-	wg           sync.WaitGroup
-	requeueWG    sync.WaitGroup
-	enqueued     sync.Map
-	repo         *repository.TaskRepository
-	tokenManager queue.TokenManager
-	requeueStop  chan struct{}
+	repo  *repository.TaskRepository
+	queue chan string
+	wg    sync.WaitGroup
 }
 
 func NewPoolService(
-	tokenManager queue.TokenManager,
 	repo *repository.TaskRepository,
 	workers int,
 	queueSize int,
 ) *PoolService {
 	p := &PoolService{
-		queue:        make(chan string, queueSize),
-		repo:         repo,
-		tokenManager: tokenManager,
-		requeueStop:  make(chan struct{}),
+		repo:  repo,
+		queue: make(chan string, queueSize),
 	}
-
-	ctx := context.Background()
-	if err := p.tokenManager.InitializeTokens(ctx, queueSize); err != nil {
-		log.Fatalf("failed to initialize queue tokens: %v", err)
-	}
-
-	p.requeueWG.Add(1)
-	go p.requeuePendingLoop()
 
 	for i := 1; i <= workers; i++ {
 		p.wg.Add(1)
@@ -51,11 +36,6 @@ func NewPoolService(
 	}
 
 	return p
-}
-
-func (p *PoolService) Enqueue(taskID string) bool {
-	ok, _ := p.enqueueIfNotPresent(taskID)
-	return ok
 }
 
 func (p *PoolService) worker(workerID int) {
@@ -72,8 +52,6 @@ func (p *PoolService) worker(workerID int) {
 
 func (p *PoolService) handleTask(workerID int, taskID string) {
 	ctx := context.Background()
-	defer p.releaseQueueToken(ctx, workerID)
-	defer p.untrackEnqueued(taskID)
 
 	task, err := p.findAndStartTask(ctx, workerID, taskID)
 	if err != nil {
@@ -101,7 +79,7 @@ func (p *PoolService) findAndStartTask(ctx context.Context, workerID int, taskID
 	task.StartedAt = &startedAt
 
 	if err := p.repo.Update(ctx, task); err != nil {
-		if errors.Is(err, repository.ErrOptimisticLock) {
+		if errors.Is(err, apperrors.ErrOptimisticLock) {
 			log.Printf("worker %d: optimistic lock conflict starting task %s", workerID, taskID)
 			return nil, err
 		}
@@ -123,7 +101,7 @@ func (p *PoolService) completeTask(ctx context.Context, workerID int, task *mode
 	task.CompletedAt = &completedAt
 
 	if err := p.repo.Update(ctx, task); err != nil {
-		if errors.Is(err, repository.ErrOptimisticLock) {
+		if errors.Is(err, apperrors.ErrOptimisticLock) {
 			log.Printf("worker %d: optimistic lock conflict completing task %s", workerID, task.ID)
 			return err
 		}
@@ -135,74 +113,7 @@ func (p *PoolService) completeTask(ctx context.Context, workerID int, task *mode
 	return nil
 }
 
-func (p *PoolService) releaseQueueToken(ctx context.Context, workerID int) {
-	if err := p.tokenManager.ReleaseToken(ctx); err != nil {
-		log.Printf("worker %d: failed to release queue token: %v", workerID, err)
-	}
-}
-
-func (p *PoolService) requeuePendingLoop() {
-	defer p.requeueWG.Done()
-
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			p.requeuePendingOnce()
-		case <-p.requeueStop:
-			return
-		}
-	}
-}
-
-func (p *PoolService) requeuePendingOnce() {
-	ctx := context.Background()
-
-	tasks, err := p.repo.ListPendingUnstarted(ctx, 50)
-	if err != nil {
-		log.Printf("requeue: failed to list pending tasks: %v", err)
-		return
-	}
-
-	for _, task := range tasks {
-		enqueued, queueFull := p.enqueueIfNotPresent(task.ID)
-		if !enqueued && !queueFull {
-			continue
-		}
-		if queueFull {
-			return
-		}
-	}
-}
-
-func (p *PoolService) enqueueIfNotPresent(taskID string) (bool, bool) {
-	if !p.trackEnqueued(taskID) {
-		return false, false
-	}
-
-	select {
-	case p.queue <- taskID:
-		return true, false
-	default:
-		p.untrackEnqueued(taskID)
-		return false, true
-	}
-}
-
-func (p *PoolService) trackEnqueued(taskID string) bool {
-	_, loaded := p.enqueued.LoadOrStore(taskID, struct{}{})
-	return !loaded
-}
-
-func (p *PoolService) untrackEnqueued(taskID string) {
-	p.enqueued.Delete(taskID)
-}
-
 func (p *PoolService) Shutdown(ctx context.Context) {
-	close(p.requeueStop)
-	p.requeueWG.Wait()
 	close(p.queue)
 
 	done := make(chan struct{})
