@@ -11,6 +11,8 @@ type Config struct {
 	AppURL                 string
 	Workers                int
 	QueueSize              int
+	PollIntervalSeconds    int
+	PollBatchSize          int
 	DatabaseDSN            string
 	RateLimit              int
 	RedisAddr              string
@@ -28,6 +30,8 @@ func Load() Config {
 		AppURL:                 fmt.Sprintf("%s:%s", appHost, appPort),
 		Workers:                getEnvAsInt("TASK_WORKERS", 5),
 		QueueSize:              getEnvAsInt("TASK_QUEUE_SIZE", 10),
+		PollIntervalSeconds:    getEnvAsInt("TASK_POLL_INTERVAL_SECONDS", 5),
+		PollBatchSize:          getEnvAsInt("TASK_POLL_BATCH_SIZE", 10),
 		DatabaseDSN:            getEnv("DATABASE_DSN", "tasks.db"),
 		RateLimit:              getEnvAsInt("RATE_LIMIT_PER_MINUTE", 60),
 		RedisAddr:              fmt.Sprintf("%s:%s", redisHost, redisPort),
@@ -48,6 +52,12 @@ func validate(cfg Config) {
 	}
 	if cfg.QueueSize <= 0 {
 		log.Fatal("TASK_QUEUE_SIZE must be greater than 0")
+	}
+	if cfg.PollIntervalSeconds <= 0 {
+		log.Fatal("TASK_POLL_INTERVAL_SECONDS must be greater than 0")
+	}
+	if cfg.PollBatchSize <= 0 {
+		log.Fatal("TASK_POLL_BATCH_SIZE must be greater than 0")
 	}
 	if cfg.DatabaseDSN == "" {
 		log.Fatal("DATABASE_DSN must not be empty")

@@ -1,8 +1,8 @@
 package model
 
 import (
-	"time"
 	"task-pool-system.com/task-pool-system/internal/constants"
+	"time"
 )
 
 type Task struct {

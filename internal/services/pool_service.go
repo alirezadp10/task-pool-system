@@ -15,25 +15,37 @@ import (
 )
 
 type PoolService struct {
-	repo  *repository.TaskRepository
-	queue chan string
-	wg    sync.WaitGroup
+	repo               *repository.TaskRepository
+	queue              chan string
+	pollIntervalSec    int
+	pollBatchSize      int
+	wg                 sync.WaitGroup
+	pollerWg           sync.WaitGroup
+	shutdownPollerChan chan struct{}
 }
 
 func NewPoolService(
 	repo *repository.TaskRepository,
 	workers int,
 	queueSize int,
+	pollIntervalSec int,
+	pollBatchSize int,
 ) *PoolService {
 	p := &PoolService{
-		repo:  repo,
-		queue: make(chan string, queueSize),
+		repo:               repo,
+		queue:              make(chan string, queueSize),
+		pollIntervalSec:    pollIntervalSec,
+		pollBatchSize:      pollBatchSize,
+		shutdownPollerChan: make(chan struct{}),
 	}
 
 	for i := 1; i <= workers; i++ {
 		p.wg.Add(1)
 		go p.worker(i)
 	}
+
+	p.pollerWg.Add(1)
+	go p.pollTasks()
 
 	return p
 }
@@ -53,7 +65,7 @@ func (p *PoolService) worker(workerID int) {
 func (p *PoolService) handleTask(workerID int, taskID string) {
 	ctx := context.Background()
 
-	task, err := p.findAndStartTask(ctx, workerID, taskID)
+	task, err := p.updateTaskStatus(ctx, workerID, taskID)
 	if err != nil {
 		return
 	}
@@ -67,7 +79,7 @@ func (p *PoolService) handleTask(workerID int, taskID string) {
 	}
 }
 
-func (p *PoolService) findAndStartTask(ctx context.Context, workerID int, taskID string) (*model.Task, error) {
+func (p *PoolService) updateTaskStatus(ctx context.Context, workerID int, taskID string) (*model.Task, error) {
 	task, err := p.repo.FindByID(ctx, taskID)
 	if err != nil {
 		log.Printf("worker %d: task %s not found", workerID, taskID)
@@ -113,7 +125,55 @@ func (p *PoolService) completeTask(ctx context.Context, workerID int, task *mode
 	return nil
 }
 
+func (p *PoolService) pollTasks() {
+	log.Printf("task poller started (interval: %ds, batch size: %d)", p.pollIntervalSec, p.pollBatchSize)
+	defer p.pollerWg.Done()
+
+	ticker := time.NewTicker(time.Duration(p.pollIntervalSec) * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			p.fetchAndEnqueueTasks()
+		case <-p.shutdownPollerChan:
+			log.Println("task poller stopped")
+			return
+		}
+	}
+}
+
+func (p *PoolService) fetchAndEnqueueTasks() {
+	ctx := context.Background()
+
+	tasks, err := p.repo.ListPendingUnstarted(ctx, p.pollBatchSize)
+	if err != nil {
+		log.Printf("failed to fetch pending tasks: %v", err)
+		return
+	}
+
+	if len(tasks) == 0 {
+		return
+	}
+
+	log.Printf("polling found %d pending task(s)", len(tasks))
+
+	for _, task := range tasks {
+		select {
+		case p.queue <- task.ID:
+			log.Printf("enqueued task %s to worker pool", task.ID)
+		default:
+			log.Printf("queue full, skipping task %s (will retry next poll)", task.ID)
+			return
+		}
+	}
+}
+
 func (p *PoolService) Shutdown(ctx context.Context) {
+	close(p.shutdownPollerChan)
+	p.pollerWg.Wait()
+	log.Println("task poller shut down")
+
 	close(p.queue)
 
 	done := make(chan struct{})
