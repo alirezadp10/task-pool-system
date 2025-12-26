@@ -30,9 +30,7 @@ func (h *Handler) CreateTask(c echo.Context) error {
 		return err
 	}
 
-	ctx := c.Request().Context()
-
-	task, err := h.taskService.CreateTask(ctx, req.Title, req.Description)
+	task, err := h.taskService.CreateTask(c.Request().Context(), req.Title, req.Description)
 	if err != nil {
 		return echo.NewHTTPError(exception.StatusCode(err), err.Error())
 	}

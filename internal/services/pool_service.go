@@ -7,15 +7,13 @@ import (
 	"math/rand"
 	"sync"
 	dto "task-pool-system.com/task-pool-system/internal/data_models"
-	"time"
-
-	"task-pool-system.com/task-pool-system/internal/constants"
 	apperrors "task-pool-system.com/task-pool-system/internal/errors"
-	model "task-pool-system.com/task-pool-system/internal/models"
 	repository "task-pool-system.com/task-pool-system/internal/repositories"
+	"time"
 )
 
 type PoolService struct {
+	ctx                context.Context
 	repo               *repository.TaskRepository
 	queue              chan dto.TaskMessageData
 	workerWg           sync.WaitGroup
@@ -24,6 +22,7 @@ type PoolService struct {
 }
 
 func NewPoolService(
+	ctx context.Context,
 	repo *repository.TaskRepository,
 	workers int,
 	queueSize int,
@@ -31,6 +30,7 @@ func NewPoolService(
 	pollBatchSize int,
 ) *PoolService {
 	p := &PoolService{
+		ctx:                ctx,
 		repo:               repo,
 		queue:              make(chan dto.TaskMessageData, queueSize),
 		shutdownPollerChan: make(chan struct{}),
@@ -62,34 +62,13 @@ func (p *PoolService) startPoller(pollIntervalSec, pollBatchSize int) {
 }
 
 func (p *PoolService) handleTask(workerID int, taskMsgData dto.TaskMessageData) {
-	ctx := context.Background()
-
-	task, err := p.startTask(ctx, workerID, taskMsgData)
-	if err != nil {
-		log.Printf("worker %d stopped with error %s", workerID, err.Error())
-		return
-	}
-
+	// task stuck issue
 	p.simulateWork()
 
-	if err := p.completeTask(ctx, workerID, task); err != nil {
+	if err := p.completeTask(workerID, taskMsgData); err != nil {
 		log.Printf("worker %d stopped with error %s", workerID, err.Error())
 		return
 	}
-}
-
-func (p *PoolService) startTask(ctx context.Context, workerID int, taskMsgData dto.TaskMessageData) (*model.Task, error) {
-	task, err := p.repo.MarkAsInProgress(ctx, taskMsgData.TaskID, taskMsgData.TaskVersion)
-	if err != nil {
-		if errors.Is(err, apperrors.ErrOptimisticLock) {
-			log.Printf("worker %d: task %s already processed or not found", workerID, taskMsgData.TaskID)
-			return nil, err
-		}
-		log.Printf("worker %d: failed to mark task %s as in_progress", workerID, taskMsgData.TaskID)
-		return nil, err
-	}
-
-	return task, nil
 }
 
 func (p *PoolService) simulateWork() {
@@ -97,17 +76,17 @@ func (p *PoolService) simulateWork() {
 	time.Sleep(duration)
 }
 
-func (p *PoolService) completeTask(ctx context.Context, workerID int, task *model.Task) error {
-	completedAt := time.Now().UTC()
-	task.Status = constants.StatusCompleted
-	task.CompletedAt = &completedAt
+func (p *PoolService) completeTask(workerID int, taskMsgData dto.TaskMessageData) error {
+	ctx, cancel := context.WithTimeout(p.ctx, 5*time.Second)
+	defer cancel()
 
-	if err := p.repo.Update(ctx, task); err != nil {
+	err := p.repo.MarkAsComplete(ctx, taskMsgData.TaskID, taskMsgData.TaskVersion)
+	if err != nil {
 		if errors.Is(err, apperrors.ErrOptimisticLock) {
-			log.Printf("worker %d: optimistic lock conflict completing task %s", workerID, task.ID)
+			log.Printf("worker %d: failed to complete task %s", workerID, taskMsgData.TaskID)
 			return err
 		}
-		log.Printf("worker %d: failed to complete task %s", workerID, task.ID)
+		log.Printf("worker %d: failed to complete task %s", workerID, taskMsgData.TaskID)
 		return err
 	}
 
@@ -131,24 +110,25 @@ func (p *PoolService) pollTasks(pollIntervalSec, pollBatchSize int) {
 }
 
 func (p *PoolService) fetchAndEnqueueTasks(pollBatchSize int) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(p.ctx, 5*time.Second)
+	defer cancel()
 
-	tasks, err := p.repo.ListPendingUnstarted(ctx, pollBatchSize)
-	if err != nil {
-		log.Printf("failed to fetch pending tasks: %v", err)
+	free := cap(p.queue) - len(p.queue)
+	if free == 0 {
 		return
 	}
 
+	tasks, err := p.repo.ListPendingUnstarted(ctx, minInt(free, pollBatchSize))
+	if err != nil {
+		log.Printf("failed to claim pending tasks: %v", err)
+		return
+	}
 	if len(tasks) == 0 {
 		return
 	}
 
 	for _, task := range tasks {
-		select {
-		case p.queue <- dto.TaskMessageData{TaskID: task.ID, TaskVersion: task.Version}:
-		default:
-			return
-		}
+		p.queue <- dto.TaskMessageData{TaskID: task.ID, TaskVersion: task.Version}
 	}
 }
 
@@ -170,4 +150,11 @@ func (p *PoolService) Shutdown(ctx context.Context) {
 	case <-ctx.Done():
 		log.Println("worker pool shutdown timed out")
 	}
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

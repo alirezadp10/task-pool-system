@@ -61,27 +61,36 @@ func (r *TaskRepository) ListPendingUnstarted(ctx context.Context, limit int) ([
 	}
 
 	var tasks []model.Task
-	query := r.db.WithContext(ctx).
-		Where("status = ? AND started_at IS NULL", constants.StatusPending).
-		Order("created_at asc").Limit(limit)
+	now := time.Now().UTC()
 
-	if err := query.Find(&tasks).Error; err != nil {
+	err := r.db.WithContext(ctx).Raw(`
+        WITH cte AS (
+            SELECT id
+            FROM tasks
+            WHERE status = ?
+            ORDER BY created_at
+            FOR UPDATE SKIP LOCKED
+            LIMIT ?
+        )
+        UPDATE tasks t
+        SET status = ?, started_at = ?, version = t.version + 1
+        FROM cte
+        WHERE t.id = cte.id
+        RETURNING t.*;
+    `, constants.StatusPending, limit, constants.StatusInProgress, now).Scan(&tasks).Error
+
+	if err != nil {
 		return nil, err
 	}
-
 	return tasks, nil
 }
 
-func (r *TaskRepository) Update(ctx context.Context, task *model.Task) error {
+func (r *TaskRepository) MarkAsComplete(ctx context.Context, taskID string, taskVersion uint) error {
 	res := r.db.WithContext(ctx).Model(&model.Task{}).
-		Where("id = ? AND version = ?", task.ID, task.Version).
+		Where("id = ? AND version = ?", taskID, taskVersion).
 		Updates(map[string]interface{}{
-			"title":        task.Title,
-			"description":  task.Description,
-			"status":       task.Status,
-			"duration_sec": task.DurationSec,
-			"started_at":   task.StartedAt,
-			"completed_at": task.CompletedAt,
+			"status":       constants.StatusCompleted,
+			"completed_at": time.Now().UTC(),
 			"version":      gorm.Expr("version + 1"),
 		})
 
@@ -93,24 +102,5 @@ func (r *TaskRepository) Update(ctx context.Context, task *model.Task) error {
 		return apperrors.ErrOptimisticLock
 	}
 
-	task.Version++
 	return nil
-}
-
-func (r *TaskRepository) MarkAsInProgress(ctx context.Context, taskID string, taskVersion uint) (*model.Task, error) {
-	var task model.Task
-	err := r.db.WithContext(ctx).Raw(
-		`UPDATE tasks SET status = ?, started_at = ?, version = version + 1 WHERE id = ? AND version = ? RETURNING *`,
-		constants.StatusInProgress, time.Now().UTC(), taskID, taskVersion,
-	).Scan(&task).Error
-
-	if err != nil {
-		return nil, err
-	}
-
-	if task.ID == "" {
-		return nil, apperrors.ErrOptimisticLock
-	}
-
-	return &task, nil
 }

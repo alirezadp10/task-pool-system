@@ -34,7 +34,9 @@ var serverCmd = &cobra.Command{
 
 		taskRepo := repository.NewTaskRepository(sqlite)
 
-		poolService := services.NewPoolService(taskRepo, cfg.Workers, cfg.QueueSize, cfg.PollIntervalSeconds, cfg.PollBatchSize)
+		ctx := context.Background()
+
+		poolService := services.NewPoolService(ctx, taskRepo, cfg.Workers, cfg.QueueSize, cfg.PollIntervalSeconds, cfg.PollBatchSize)
 
 		taskService := services.NewTaskService(taskRepo)
 
