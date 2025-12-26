@@ -7,7 +7,7 @@ import (
 	"math/rand"
 	"sync"
 	dto "task-pool-system.com/task-pool-system/internal/data_models"
-	apperrors "task-pool-system.com/task-pool-system/internal/errors"
+	exception "task-pool-system.com/task-pool-system/internal/exceptions"
 	repository "task-pool-system.com/task-pool-system/internal/repositories"
 	"time"
 )
@@ -82,7 +82,7 @@ func (p *PoolService) completeTask(workerID int, taskMsgData dto.TaskMessageData
 
 	err := p.repo.MarkAsComplete(ctx, taskMsgData.TaskID, taskMsgData.TaskVersion)
 	if err != nil {
-		if errors.Is(err, apperrors.ErrOptimisticLock) {
+		if errors.Is(err, exception.ErrOptimisticLock) {
 			log.Printf("worker %d: failed to complete task %s", workerID, taskMsgData.TaskID)
 			return err
 		}
@@ -132,24 +132,12 @@ func (p *PoolService) fetchAndEnqueueTasks(pollBatchSize int) {
 	}
 }
 
-func (p *PoolService) Shutdown(ctx context.Context) {
+func (p *PoolService) Shutdown() {
 	close(p.shutdownPollerChan)
 	p.pollerWg.Wait()
 
 	close(p.queue)
-
-	done := make(chan struct{})
-	go func() {
-		p.workerWg.Wait()
-		close(done)
-	}()
-
-	select {
-	case <-done:
-		log.Println("worker pool shut down cleanly")
-	case <-ctx.Done():
-		log.Println("worker pool shutdown timed out")
-	}
+	p.workerWg.Wait()
 }
 
 func minInt(a, b int) int {

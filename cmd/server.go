@@ -62,7 +62,7 @@ var serverCmd = &cobra.Command{
 		defer cancel()
 
 		_ = e.Shutdown(ctx)
-		poolService.Shutdown(ctx)
+		poolService.Shutdown()
 
 		log.Println("HTTP server and worker pool shut down gracefully")
 		return nil
