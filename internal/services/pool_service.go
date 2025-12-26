@@ -66,7 +66,7 @@ func (p *PoolService) handleTask(workerID int, taskMsgData dto.TaskMessageData) 
 	p.simulateWork()
 
 	if err := p.completeTask(workerID, taskMsgData); err != nil {
-		log.Printf("worker %d stopped with error %s", workerID, err.Error())
+		log.Printf("PoolService[handleTask]: worker %d stopped with error %s", workerID, err.Error())
 		return
 	}
 }
@@ -83,10 +83,10 @@ func (p *PoolService) completeTask(workerID int, taskMsgData dto.TaskMessageData
 	err := p.repo.MarkAsComplete(ctx, taskMsgData.TaskID, taskMsgData.TaskVersion)
 	if err != nil {
 		if errors.Is(err, exception.ErrOptimisticLock) {
-			log.Printf("worker %d: failed to complete task %s", workerID, taskMsgData.TaskID)
+			log.Printf("PoolService[completeTask]: worker %d: failed to complete task %s", workerID, taskMsgData.TaskID)
 			return err
 		}
-		log.Printf("worker %d: failed to complete task %s", workerID, taskMsgData.TaskID)
+		log.Printf("PoolService[completeTask]: worker %d: failed to complete task %s", workerID, taskMsgData.TaskID)
 		return err
 	}
 
@@ -120,7 +120,7 @@ func (p *PoolService) fetchAndEnqueueTasks(pollBatchSize int) {
 
 	tasks, err := p.repo.ListPendingUnstarted(ctx, minInt(free, pollBatchSize))
 	if err != nil {
-		log.Printf("failed to claim pending tasks: %v", err)
+		log.Printf("PoolService[fetchAndEnqueueTasks]: failed to claim pending tasks: %v", err)
 		return
 	}
 	if len(tasks) == 0 {
