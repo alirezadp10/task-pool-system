@@ -22,7 +22,7 @@ func NewHandler(taskService *services.TaskService) *Handler {
 }
 
 func (h *Handler) CreateTask(c echo.Context) error {
-	var req dto.CreateTaskRequest
+	var req dto.TaskRequestData
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(exception.ErrInvalidJSON.StatusCode, exception.ErrInvalidJSON.Error())
 	}

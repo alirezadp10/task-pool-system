@@ -39,7 +39,6 @@ var serverCmd = &cobra.Command{
 		taskService := services.NewTaskService(taskRepo)
 
 		e := echo.New()
-
 		handler := httpapi.NewHandler(taskService)
 		httpapi.Register(e, handler, cfg.RateLimit)
 

@@ -96,3 +96,21 @@ func (r *TaskRepository) Update(ctx context.Context, task *model.Task) error {
 	task.Version++
 	return nil
 }
+
+func (r *TaskRepository) MarkAsInProgress(ctx context.Context, taskID string, taskVersion uint) (*model.Task, error) {
+	var task model.Task
+	err := r.db.WithContext(ctx).Raw(
+		`UPDATE tasks SET status = ?, started_at = ?, version = version + 1 WHERE id = ? AND version = ? RETURNING *`,
+		constants.StatusInProgress, time.Now().UTC(), taskID, taskVersion,
+	).Scan(&task).Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	if task.ID == "" {
+		return nil, apperrors.ErrOptimisticLock
+	}
+
+	return &task, nil
+}

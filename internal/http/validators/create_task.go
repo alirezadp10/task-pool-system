@@ -8,7 +8,7 @@ import (
 	dto "task-pool-system.com/task-pool-system/internal/data_models"
 )
 
-func ValidateCreateTaskRequest(r *dto.CreateTaskRequest) error {
+func ValidateCreateTaskRequest(r *dto.TaskRequestData) error {
 	if r.Title == "" {
 		return echo.NewHTTPError(http.StatusBadRequest, "title is required")
 	}

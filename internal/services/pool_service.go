@@ -6,6 +6,7 @@ import (
 	"log"
 	"math/rand"
 	"sync"
+	dto "task-pool-system.com/task-pool-system/internal/data_models"
 	"time"
 
 	"task-pool-system.com/task-pool-system/internal/constants"
@@ -16,10 +17,8 @@ import (
 
 type PoolService struct {
 	repo               *repository.TaskRepository
-	queue              chan string
-	pollIntervalSec    int
-	pollBatchSize      int
-	wg                 sync.WaitGroup
+	queue              chan dto.TaskMessageData
+	workerWg           sync.WaitGroup
 	pollerWg           sync.WaitGroup
 	shutdownPollerChan chan struct{}
 }
@@ -33,69 +32,60 @@ func NewPoolService(
 ) *PoolService {
 	p := &PoolService{
 		repo:               repo,
-		queue:              make(chan string, queueSize),
-		pollIntervalSec:    pollIntervalSec,
-		pollBatchSize:      pollBatchSize,
+		queue:              make(chan dto.TaskMessageData, queueSize),
 		shutdownPollerChan: make(chan struct{}),
 	}
 
-	for i := 1; i <= workers; i++ {
-		p.wg.Add(1)
-		go p.worker(i)
-	}
+	p.startWorkers(workers)
 
-	p.pollerWg.Add(1)
-	go p.pollTasks()
+	p.startPoller(pollIntervalSec, pollBatchSize)
 
 	return p
 }
 
-func (p *PoolService) worker(workerID int) {
-	defer p.wg.Done()
-
-	log.Printf("worker %d started", workerID)
-
-	for taskID := range p.queue {
-		p.handleTask(workerID, taskID)
+func (p *PoolService) startWorkers(workers int) {
+	for i := 1; i <= workers; i++ {
+		workerID := i
+		p.workerWg.Add(1)
+		go func() {
+			defer p.workerWg.Done()
+			for taskMsgData := range p.queue {
+				p.handleTask(workerID, taskMsgData)
+			}
+		}()
 	}
-
-	log.Printf("worker %d stopped", workerID)
 }
 
-func (p *PoolService) handleTask(workerID int, taskID string) {
+func (p *PoolService) startPoller(pollIntervalSec, pollBatchSize int) {
+	p.pollerWg.Add(1)
+	go p.pollTasks(pollIntervalSec, pollBatchSize)
+}
+
+func (p *PoolService) handleTask(workerID int, taskMsgData dto.TaskMessageData) {
 	ctx := context.Background()
 
-	task, err := p.updateTaskStatus(ctx, workerID, taskID)
+	task, err := p.startTask(ctx, workerID, taskMsgData)
 	if err != nil {
+		log.Printf("worker %d stopped with error %s", workerID, err.Error())
 		return
 	}
-
-	log.Printf("worker %d processing task %s", workerID, taskID)
 
 	p.simulateWork()
 
 	if err := p.completeTask(ctx, workerID, task); err != nil {
+		log.Printf("worker %d stopped with error %s", workerID, err.Error())
 		return
 	}
 }
 
-func (p *PoolService) updateTaskStatus(ctx context.Context, workerID int, taskID string) (*model.Task, error) {
-	task, err := p.repo.FindByID(ctx, taskID)
+func (p *PoolService) startTask(ctx context.Context, workerID int, taskMsgData dto.TaskMessageData) (*model.Task, error) {
+	task, err := p.repo.MarkAsInProgress(ctx, taskMsgData.TaskID, taskMsgData.TaskVersion)
 	if err != nil {
-		log.Printf("worker %d: task %s not found", workerID, taskID)
-		return nil, err
-	}
-
-	startedAt := time.Now().UTC()
-	task.Status = constants.StatusInProgress
-	task.StartedAt = &startedAt
-
-	if err := p.repo.Update(ctx, task); err != nil {
 		if errors.Is(err, apperrors.ErrOptimisticLock) {
-			log.Printf("worker %d: optimistic lock conflict starting task %s", workerID, taskID)
+			log.Printf("worker %d: task %s already processed or not found", workerID, taskMsgData.TaskID)
 			return nil, err
 		}
-		log.Printf("worker %d: failed to update task %s", workerID, taskID)
+		log.Printf("worker %d: failed to mark task %s as in_progress", workerID, taskMsgData.TaskID)
 		return nil, err
 	}
 
@@ -121,32 +111,29 @@ func (p *PoolService) completeTask(ctx context.Context, workerID int, task *mode
 		return err
 	}
 
-	log.Printf("worker %d completed task %s", workerID, task.ID)
 	return nil
 }
 
-func (p *PoolService) pollTasks() {
-	log.Printf("task poller started (interval: %ds, batch size: %d)", p.pollIntervalSec, p.pollBatchSize)
+func (p *PoolService) pollTasks(pollIntervalSec, pollBatchSize int) {
 	defer p.pollerWg.Done()
 
-	ticker := time.NewTicker(time.Duration(p.pollIntervalSec) * time.Second)
+	ticker := time.NewTicker(time.Duration(pollIntervalSec) * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ticker.C:
-			p.fetchAndEnqueueTasks()
+			p.fetchAndEnqueueTasks(pollBatchSize)
 		case <-p.shutdownPollerChan:
-			log.Println("task poller stopped")
 			return
 		}
 	}
 }
 
-func (p *PoolService) fetchAndEnqueueTasks() {
+func (p *PoolService) fetchAndEnqueueTasks(pollBatchSize int) {
 	ctx := context.Background()
 
-	tasks, err := p.repo.ListPendingUnstarted(ctx, p.pollBatchSize)
+	tasks, err := p.repo.ListPendingUnstarted(ctx, pollBatchSize)
 	if err != nil {
 		log.Printf("failed to fetch pending tasks: %v", err)
 		return
@@ -156,14 +143,10 @@ func (p *PoolService) fetchAndEnqueueTasks() {
 		return
 	}
 
-	log.Printf("polling found %d pending task(s)", len(tasks))
-
 	for _, task := range tasks {
 		select {
-		case p.queue <- task.ID:
-			log.Printf("enqueued task %s to worker pool", task.ID)
+		case p.queue <- dto.TaskMessageData{TaskID: task.ID, TaskVersion: task.Version}:
 		default:
-			log.Printf("queue full, skipping task %s (will retry next poll)", task.ID)
 			return
 		}
 	}
@@ -172,13 +155,12 @@ func (p *PoolService) fetchAndEnqueueTasks() {
 func (p *PoolService) Shutdown(ctx context.Context) {
 	close(p.shutdownPollerChan)
 	p.pollerWg.Wait()
-	log.Println("task poller shut down")
 
 	close(p.queue)
 
 	done := make(chan struct{})
 	go func() {
-		p.wg.Wait()
+		p.workerWg.Wait()
 		close(done)
 	}()
 
