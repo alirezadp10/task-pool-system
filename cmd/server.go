@@ -2,15 +2,13 @@ package cmd
 
 import (
 	"context"
-	"log"
-	"os"
-	"os/signal"
-	"syscall"
-	"time"
-
 	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v4"
 	"github.com/spf13/cobra"
+	"log"
+	"os/signal"
+	"syscall"
+	"time"
 
 	config "task-pool-system.com/task-pool-system/internal/configs"
 	httpapi "task-pool-system.com/task-pool-system/internal/http"
@@ -23,18 +21,16 @@ var serverCmd = &cobra.Command{
 	Short: "Start the HTTP API server",
 	Long:  "Starts the task pool HTTP API and worker pool",
 	RunE: func(cmd *cobra.Command, args []string) error {
-
 		if err := godotenv.Load(); err != nil {
 			log.Println(".env file not found, using environment variables")
 		}
 
 		cfg := config.Load()
+		database := config.NewDatabaseClient(cfg.DatabaseDSN)
+		taskRepo := repository.NewTaskRepository(database)
 
-		sqlite := config.NewSqliteClient(cfg.DatabaseDSN)
-
-		taskRepo := repository.NewTaskRepository(sqlite)
-
-		ctx := context.Background()
+		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+		defer stop()
 
 		poolService := services.NewPoolService(ctx, taskRepo, cfg.Workers, cfg.QueueSize, cfg.PollIntervalSeconds, cfg.PollBatchSize)
 
@@ -51,17 +47,12 @@ var serverCmd = &cobra.Command{
 			}
 		}()
 
-		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-		<-sigCh
+		<-ctx.Done()
 
-		ctx, cancel := context.WithTimeout(
-			context.Background(),
-			time.Duration(cfg.ShutdownTimeoutSeconds)*time.Second,
-		)
+		echoCtx, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.ShutdownTimeoutSeconds)*time.Second)
 		defer cancel()
+		_ = e.Shutdown(echoCtx)
 
-		_ = e.Shutdown(ctx)
 		poolService.Shutdown()
 
 		log.Println("HTTP server and worker pool shut down gracefully")

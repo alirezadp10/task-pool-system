@@ -13,12 +13,11 @@ import (
 )
 
 type PoolService struct {
-	ctx                context.Context
-	repo               *repository.TaskRepository
-	queue              chan dto.TaskMessageData
-	workerWg           sync.WaitGroup
-	pollerWg           sync.WaitGroup
-	shutdownPollerChan chan struct{}
+	ctx      context.Context
+	repo     *repository.TaskRepository
+	queue    chan dto.TaskMessageData
+	workerWg sync.WaitGroup
+	pollerWg sync.WaitGroup
 }
 
 func NewPoolService(
@@ -30,10 +29,9 @@ func NewPoolService(
 	pollBatchSize int,
 ) *PoolService {
 	p := &PoolService{
-		ctx:                ctx,
-		repo:               repo,
-		queue:              make(chan dto.TaskMessageData, queueSize),
-		shutdownPollerChan: make(chan struct{}),
+		ctx:   ctx,
+		repo:  repo,
+		queue: make(chan dto.TaskMessageData, queueSize),
 	}
 
 	p.startWorkers(workers)
@@ -103,7 +101,7 @@ func (p *PoolService) pollTasks(pollIntervalSec, pollBatchSize int) {
 		select {
 		case <-ticker.C:
 			p.fetchAndEnqueueTasks(pollBatchSize)
-		case <-p.shutdownPollerChan:
+		case <-p.ctx.Done():
 			return
 		}
 	}
@@ -133,9 +131,7 @@ func (p *PoolService) fetchAndEnqueueTasks(pollBatchSize int) {
 }
 
 func (p *PoolService) Shutdown() {
-	close(p.shutdownPollerChan)
 	p.pollerWg.Wait()
-
 	close(p.queue)
 	p.workerWg.Wait()
 }

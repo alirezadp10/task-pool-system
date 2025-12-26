@@ -9,7 +9,7 @@ import (
 	model "task-pool-system.com/task-pool-system/internal/models"
 )
 
-func NewSqliteClient(dsn string) *gorm.DB {
+func NewDatabaseClient(dsn string) *gorm.DB {
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	if err != nil {
 		log.Fatalf("db open failed: %v", err)
