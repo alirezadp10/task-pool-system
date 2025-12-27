@@ -6,7 +6,7 @@ import (
 	"github.com/labstack/echo/v4"
 
 	dto "task-pool-system.com/task-pool-system/internal/data_models"
-	exception "task-pool-system.com/task-pool-system/internal/errors"
+	exception "task-pool-system.com/task-pool-system/internal/exceptions"
 	"task-pool-system.com/task-pool-system/internal/http/validators"
 	"task-pool-system.com/task-pool-system/internal/services"
 )
