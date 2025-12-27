@@ -5,9 +5,9 @@ import (
 	"net/http"
 
 	dto "task-pool-system.com/task-pool-system/internal/data_models"
-	exception "task-pool-system.com/task-pool-system/pkg/exceptions"
 	"task-pool-system.com/task-pool-system/internal/http/validators"
 	"task-pool-system.com/task-pool-system/internal/services"
+	exception "task-pool-system.com/task-pool-system/pkg/exceptions"
 )
 
 type TaskHandler struct {
