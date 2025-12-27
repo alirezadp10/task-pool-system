@@ -2,7 +2,6 @@ services:
   app:
     build: .
     container_name: task-pool-system
-    command: ["app", "server"]
     ports:
       - "${APP_PORT:-8080}:${APP_PORT:-8080}"
     env_file:

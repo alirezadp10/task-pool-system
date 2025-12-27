@@ -41,4 +41,4 @@ USER app
 EXPOSE 9000
 
 # Cobra subcommand
-ENTRYPOINT ["app", "server"]
+ENTRYPOINT ["app", "serve"]

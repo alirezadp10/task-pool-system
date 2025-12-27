@@ -63,21 +63,18 @@ func (r *TaskRepository) ListPendingUnstarted(ctx context.Context, limit int) ([
 	var tasks []model.Task
 	now := time.Now().UTC()
 
+	// SQLite-compatible query using subquery and RETURNING (SQLite 3.35.0+)
 	err := r.db.WithContext(ctx).Raw(`
-        WITH cte AS (
-            SELECT id
-            FROM tasks
+        UPDATE tasks
+        SET status = ?, started_at = ?, version = version + 1
+        WHERE id IN (
+            SELECT id FROM tasks
             WHERE status = ?
             ORDER BY created_at
-            FOR UPDATE SKIP LOCKED
             LIMIT ?
         )
-        UPDATE tasks t
-        SET status = ?, started_at = ?, version = t.version + 1
-        FROM cte
-        WHERE t.id = cte.id
-        RETURNING t.*;
-    `, constants.StatusPending, limit, constants.StatusInProgress, now).Scan(&tasks).Error
+        RETURNING *;
+    `, constants.StatusInProgress, now, constants.StatusPending, limit).Scan(&tasks).Error
 
 	if err != nil {
 		return nil, err
