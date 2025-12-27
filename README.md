@@ -9,7 +9,6 @@ This project demonstrates:
 - REST API design
 - Worker pool pattern
 - Graceful shutdown
-- Redis-backed rate limiting and queue token management
 - Dockerized deployment
 - Clean, idiomatic Go project structure
 
@@ -20,7 +19,6 @@ This project demonstrates:
 - **Cobra** – CLI
 - **GORM** – ORM
 - **SQLite** – persistence
-- **Redis** – rate limiting and queue management
 - **Docker / Docker Compose**
 
 ## Features
@@ -33,7 +31,6 @@ This project demonstrates:
 - Graceful shutdown on SIGINT / SIGTERM
 - SQLite persistence with Docker volume
 - Configurable via environment variables
-- Redis-based resource management
 
 ## Configuration
 
@@ -49,18 +46,15 @@ The application is configured via environment variables.
 | `TASK_QUEUE_SIZE`           | Maximum pending tasks               | `10`                   |
 | `DATABASE_DSN`              | SQLite database path                | `tasks.db`             |
 | `RATE_LIMIT_PER_MINUTE`     | API rate limit                      | `60`                   |
-| `REDIS_HOST`                | Redis server host                   | `127.0.0.1`            |
-| `REDIS_PORT`                | Redis server port                   | `6379`                 |
-| `REDIS_QUEUE_KEY`           | Redis key for task queue tokens     | `task_queue_tokens`    |
 | `SHUTDOWN_TIMEOUT_SECONDS`  | Graceful shutdown timeout           | `20`                   |
 
 ## Running with Docker
 
-Docker Compose will set up both the application and a Redis instance automatically.
+Docker Compose will set up the application automatically.
 
 ### 1. Configure environment
 
-Ensure your `.env` is set up correctly. For Docker, `REDIS_HOST` and `REDIS_PORT` are overridden by the `docker-compose.yml` to use the Redis service on the Docker network (`redis:6379`).
+Ensure your `.env` is set up correctly.
 
 ### 2. Build and start
 

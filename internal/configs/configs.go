@@ -15,16 +15,12 @@ type Config struct {
 	PollBatchSize          int
 	DatabaseDSN            string
 	RateLimit              int
-	RedisAddr              string
-	RedisQueueKey          string
 	ShutdownTimeoutSeconds int
 }
 
 func Load() Config {
 	appHost := getEnv("APP_HOST", "127.0.0.1")
 	appPort := getEnv("APP_PORT", "8080")
-	redisHost := getEnv("REDIS_HOST", "127.0.0.1")
-	redisPort := getEnv("REDIS_PORT", "6379")
 
 	cfg := Config{
 		AppURL:                 fmt.Sprintf("%s:%s", appHost, appPort),
@@ -34,8 +30,6 @@ func Load() Config {
 		PollBatchSize:          getEnvAsInt("TASK_POLL_BATCH_SIZE", 10),
 		DatabaseDSN:            getEnv("DATABASE_DSN", "tasks.db"),
 		RateLimit:              getEnvAsInt("RATE_LIMIT_PER_MINUTE", 60),
-		RedisAddr:              fmt.Sprintf("%s:%s", redisHost, redisPort),
-		RedisQueueKey:          getEnv("REDIS_QUEUE_KEY", "task_queue_tokens"),
 		ShutdownTimeoutSeconds: getEnvAsInt("SHUTDOWN_TIMEOUT_SECONDS", 20),
 	}
 
