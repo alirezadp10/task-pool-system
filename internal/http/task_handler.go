@@ -24,7 +24,7 @@ func NewTaskHandler(echo *echo.Echo, taskService *services.TaskService) *TaskHan
 	return handler
 }
 
-func (h *TaskHandler) Store(c echo.Context) error {
+func (h *TaskHandler) Create(c echo.Context) error {
 	var req dto.TaskRequestData
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(exception.ErrInvalidJSON.StatusCode, exception.ErrInvalidJSON.Error())
@@ -68,7 +68,7 @@ func (h *TaskHandler) List(c echo.Context) error {
 }
 
 func (h *TaskHandler) register(e *echo.Echo) {
-	e.POST("/tasks", h.Store)
+	e.POST("/tasks", h.Create)
 	e.GET("/tasks/:id", h.Get)
 	e.GET("/tasks", h.List)
 }
