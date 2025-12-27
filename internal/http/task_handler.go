@@ -24,7 +24,7 @@ func NewTaskHandler(echo *echo.Echo, taskService *services.TaskService) *TaskHan
 	return handler
 }
 
-func (h *TaskHandler) Create(c echo.Context) error {
+func (h *TaskHandler) store(c echo.Context) error {
 	var req dto.TaskRequestData
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(exception.ErrInvalidJSON.StatusCode, exception.ErrInvalidJSON.Error())
@@ -41,7 +41,7 @@ func (h *TaskHandler) Create(c echo.Context) error {
 	return c.JSON(http.StatusAccepted, task)
 }
 
-func (h *TaskHandler) Get(c echo.Context) error {
+func (h *TaskHandler) get(c echo.Context) error {
 	id := c.Param("id")
 	if id == "" {
 		return echo.NewHTTPError(exception.ErrTaskIDRequired.StatusCode, exception.ErrTaskIDRequired.Error())
@@ -55,7 +55,7 @@ func (h *TaskHandler) Get(c echo.Context) error {
 	return c.JSON(http.StatusOK, task)
 }
 
-func (h *TaskHandler) List(c echo.Context) error {
+func (h *TaskHandler) list(c echo.Context) error {
 	tasks, err := h.taskService.ListTasks(c.Request().Context())
 	if err != nil {
 		return echo.NewHTTPError(exception.StatusCode(err), err.Error())
@@ -68,7 +68,7 @@ func (h *TaskHandler) List(c echo.Context) error {
 }
 
 func (h *TaskHandler) register(e *echo.Echo) {
-	e.POST("/tasks", h.Create)
-	e.GET("/tasks/:id", h.Get)
-	e.GET("/tasks", h.List)
+	e.POST("/tasks", h.store)
+	e.GET("/tasks/:id", h.get)
+	e.GET("/tasks", h.list)
 }
