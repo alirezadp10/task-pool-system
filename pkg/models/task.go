@@ -1,7 +1,7 @@
 package model
 
 import (
-	"task-pool-system.com/task-pool-system/internal/constants"
+	"task-pool-system.com/task-pool-system/pkg/constants"
 	"time"
 )
 

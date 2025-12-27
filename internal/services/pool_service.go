@@ -7,7 +7,7 @@ import (
 	"math/rand"
 	"sync"
 	dto "task-pool-system.com/task-pool-system/internal/data_models"
-	exception "task-pool-system.com/task-pool-system/internal/exceptions"
+	exception "task-pool-system.com/task-pool-system/pkg/exceptions"
 	repository "task-pool-system.com/task-pool-system/internal/repositories"
 	"time"
 )

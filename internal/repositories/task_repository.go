@@ -7,9 +7,9 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"task-pool-system.com/task-pool-system/internal/constants"
-	excptions "task-pool-system.com/task-pool-system/internal/exceptions"
-	model "task-pool-system.com/task-pool-system/internal/models"
+	"task-pool-system.com/task-pool-system/pkg/constants"
+	"task-pool-system.com/task-pool-system/pkg/exceptions"
+	model "task-pool-system.com/task-pool-system/pkg/models"
 )
 
 type TaskRepository struct {
@@ -42,7 +42,7 @@ func (r *TaskRepository) FindByID(ctx context.Context, id string) (*model.Task, 
 	err := r.db.WithContext(ctx).First(&task, "id = ?", id).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			return nil, excptions.ErrTaskNotFound
+			return nil, exceptions.ErrTaskNotFound
 		}
 		return nil, err
 	}
@@ -57,7 +57,7 @@ func (r *TaskRepository) List(ctx context.Context) ([]model.Task, error) {
 
 func (r *TaskRepository) ListPendingUnstarted(ctx context.Context, limit int) ([]model.Task, error) {
 	if limit <= 0 {
-		return nil, excptions.ErrInvalidLimit
+		return nil, exceptions.ErrInvalidLimit
 	}
 
 	var tasks []model.Task
@@ -96,7 +96,7 @@ func (r *TaskRepository) MarkAsComplete(ctx context.Context, taskID string, task
 	}
 
 	if res.RowsAffected == 0 {
-		return excptions.ErrOptimisticLock
+		return exceptions.ErrOptimisticLock
 	}
 
 	return nil

@@ -2,7 +2,7 @@ package services
 
 import (
 	"context"
-	model "task-pool-system.com/task-pool-system/internal/models"
+	model "task-pool-system.com/task-pool-system/pkg/models"
 	repository "task-pool-system.com/task-pool-system/internal/repositories"
 )
 

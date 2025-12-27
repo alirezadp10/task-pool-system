@@ -6,7 +6,7 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
-	model "task-pool-system.com/task-pool-system/internal/models"
+	model "task-pool-system.com/task-pool-system/pkg/models"
 )
 
 func NewDatabaseClient(dsn string) *gorm.DB {
