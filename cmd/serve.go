@@ -8,6 +8,7 @@ import (
 	"log"
 	"os/signal"
 	"syscall"
+	middleware "task-pool-system.com/task-pool-system/internal/http/middlewares"
 	"time"
 
 	config "task-pool-system.com/task-pool-system/internal/configs"
@@ -16,8 +17,8 @@ import (
 	"task-pool-system.com/task-pool-system/internal/services"
 )
 
-var serverCmd = &cobra.Command{
-	Use:   "server",
+var serveCmd = &cobra.Command{
+	Use:   "serve",
 	Short: "Start the HTTP API server",
 	Long:  "Starts the task pool HTTP API and worker pool",
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -37,8 +38,8 @@ var serverCmd = &cobra.Command{
 		taskService := services.NewTaskService(taskRepo)
 
 		e := echo.New()
-		handler := httpapi.NewHandler(taskService)
-		httpapi.Register(e, handler, cfg.RateLimit)
+		e.Use(middleware.RateLimiter(cfg.RateLimit, time.Minute))
+		httpapi.NewTaskHandler(e, taskService)
 
 		go func() {
 			log.Printf("HTTP server listening on %s", cfg.AppURL)
@@ -61,5 +62,5 @@ var serverCmd = &cobra.Command{
 }
 
 func init() {
-	rootCmd.AddCommand(serverCmd)
+	rootCmd.AddCommand(serveCmd)
 }
